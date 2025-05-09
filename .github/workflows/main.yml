@@ -1,0 +1,54 @@
+name: Ubuntu 24.10 Docker SSH
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ssh-access:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Pull Ubuntu 24.10 Docker image
+        run: docker pull ubuntu:24.10
+
+      - name: Start Ubuntu 24.10 container with SSH
+        run: |
+          docker run -d --name ubuntu24 \
+            -e TZ=UTC \
+            -p 2222:22 \
+            ubuntu:24.10 bash -c "
+              apt update &&
+              apt install -y openssh-server && \
+              echo 'root:password' | chpasswd && \
+              mkdir -p /var/run/sshd && \
+              /usr/sbin/sshd -D
+            "
+
+      - name: Install Ngrok and expose port 2222
+        env:
+          NGROK_AUTH_TOKEN: 2wqrExT2BmZa0IJ3amOtXYy4faJ_3kq4YWEXYe4P918U3RSKx
+        run: |
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt update && sudo apt install -y ngrok
+          ngrok config add-authtoken $NGROK_AUTH_TOKEN
+          ngrok tcp 2222 > ngrok.log &
+          sleep 10
+          cat ngrok.log | grep "tcp://" || echo "Ngrok tunnel not found"
+
+      - name: Show SSH command
+        run: |
+          echo "Waiting for ngrok tunnel..."
+          sleep 10
+          SSH_CMD=$(curl -s http://localhost:4040/api/tunnels | grep -o 'tcp://[^\"]*')
+          if [ -z "$SSH_CMD" ]; then
+            echo "Ngrok tunnel failed to start."
+            exit 1
+          fi
+          echo "Use the following SSH command:"
+          echo "ssh root@${SSH_CMD#tcp://} -p 22"
+          echo "Password: password"
+          
