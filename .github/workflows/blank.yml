@@ -1,53 +1,32 @@
-name: Ubuntu 24.10 Docker SSH
+name: Kali Linux GUI via noVNC
 
 on:
   workflow_dispatch:
 
 jobs:
-  ssh-access:
+  kali-novnc:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Pull Ubuntu 24.10 Docker image
-        run: docker pull ubuntu:24.10
+      - name: Pull Kali Linux noVNC Docker image
+        run: docker pull lscr.io/linuxserver/kali-linux:latest
 
-      - name: Start Ubuntu 24.10 container with SSH
+      - name: Run Kali Linux container with noVNC
         run: |
-          docker run -d --name ubuntu24 \
-            -e TZ=UTC \
-            -p 2222:22 \
-            ubuntu:24.10 bash -c "
-              apt update &&
-              apt install -y openssh-server && \
-              echo 'root:password' | chpasswd && \
-              mkdir -p /var/run/sshd && \
-              /usr/sbin/sshd -D
-            "
+          docker run -d \
+            --name=kali-linux \
+            -e PUID=1000 \
+            -e PGID=1000 \
+            -e TZ=Etc/UTC \
+            -p 3000:3000 \
+            -p 3001:3001 \
+            --security-opt seccomp=unconfined \
+            lscr.io/linuxserver/kali-linux:latest
+          
+          echo "Container launched. noVNC would be accessible at http://<IP>:3000 on a self-hosted runner."
 
-      - name: Install Ngrok and expose port 2222
-        env:
-          NGROK_AUTH_TOKEN: 2wqrExT2BmZa0IJ3amOtXYy4faJ_3kq4YWEXYe4P918U3RSKx
-        run: |
-          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-          sudo apt update && sudo apt install -y ngrok
-          ngrok config add-authtoken $NGROK_AUTH_TOKEN
-          ngrok tcp 2222 > ngrok.log &
-          sleep 10
-          cat ngrok.log | grep "tcp://" || echo "Ngrok tunnel not found"
-
-      - name: Show SSH command
-        run: |
-          echo "Waiting for ngrok tunnel..."
-          sleep 10
-          SSH_CMD=$(curl -s http://localhost:4040/api/tunnels | grep -o 'tcp://[^\"]*')
-          if [ -z "$SSH_CMD" ]; then
-            echo "Ngrok tunnel failed to start."
-            exit 1
-          fi
-          echo "Use the following SSH command:"
-          echo "ssh root@${SSH_CMD#tcp://} -p 22"
-          echo "Password: password"
+      - name: Confirm container is running
+        run: docker ps
